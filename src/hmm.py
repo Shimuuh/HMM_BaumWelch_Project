@@ -85,8 +85,3 @@ class HiddenMarkovModel:
             states[t] = psi[t+1, states[t+1]]
         
         return states
-    
-    def log_likelihood(self, observations):
-        """Compute log likelihood of observations"""
-        alpha = self.forward(observations)
-        return np.log(np.sum(alpha[-1]))

@@ -84,6 +84,12 @@
             font-size: 14px;
             margin-top: 5px;
         }
+        .summary {
+            background-color: #e3f2fd;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
     </style>
 </head>
 <body>
@@ -92,13 +98,17 @@
         
         <form method="POST">
             <label>Hidden States (N):</label>
-            <input type="number" name="hidden_states" min="1" max="10" value="2" required>
+            <input type="number" name="hidden_states" min="1" max="10" 
+                   value="{{ request.form.hidden_states or '2' }}" required>
             
             <label>Max Iterations:</label>
-            <input type="number" name="max_iter" min="1" max="1000" value="100" required>
+            <input type="number" name="max_iter" min="1" max="1000" 
+                   value="{{ request.form.max_iter or '100' }}" required>
             
             <label>Observation Sequence (comma-separated integers):</label>
-            <input type="text" name="observations" placeholder="e.g., 0,1,2,0,0,1,2" value="0,1,2,0,0,1,2" required>
+            <input type="text" name="observations" 
+                   value="{{ request.form.observations or '0,1,2,0,0,1,2' }}" 
+                   placeholder="e.g., 0,1,2,0,0,1,2" required>
             <div class="info">Use 0-based indices for observations</div>
             
             <button type="submit">Train Model</button>
@@ -113,8 +123,14 @@
         {% if result %}
         <div class="result">
             <h3>Training Results</h3>
-            <p><strong>Iterations completed:</strong> {{ result.iterations }}</p>
-            <p><strong>Final Log-Likelihood:</strong> {{ "%.6f"|format(result.final_likelihood) }}</p>
+            
+            <div class="summary">
+                <p><strong>Sequence trained:</strong> {{ request.form.observations }}</p>
+                <p><strong>Unique observation symbols (M):</strong> {{ request.form.observations.split(',')|map('int')|list|unique|list|length }}</p>
+                <p><strong>Sequence length:</strong> {{ request.form.observations.split(',')|length }}</p>
+                <p><strong>Iterations completed:</strong> {{ result.iterations }}</p>
+                <p><strong>Final Likelihood:</strong> {{ "%.6f"|format(result.final_likelihood) }}</p>
+            </div>
             
             <h4>Transition Matrix (A):</h4>
             <div class="matrix">
@@ -133,7 +149,7 @@
             
             <h4>Likelihood over Iterations:</h4>
             {% if graph_path %}
-            <img src="{{ graph_path }}" alt="Likelihood Graph">
+            <img src="{{ graph_path }}?{{ range(1, 1000) | random }}" alt="Likelihood Graph">
             {% endif %}
         </div>
         {% endif %}
