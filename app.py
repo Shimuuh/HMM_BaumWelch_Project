@@ -29,11 +29,11 @@ def index():
             # Train using Baum-Welch
             trained_model, likelihoods = baum_welch(model, observations, max_iter=max_iter)
             
-            # Prepare results for display
+            # Prepare results for display with suppress_small=True to hide scientific notation
             result = {
-                "A": np.array2string(trained_model.A, precision=4, separator=', '),
-                "B": np.array2string(trained_model.B, precision=4, separator=', '),
-                "pi": np.array2string(trained_model.pi, precision=4, separator=', '),
+                "A": np.array2string(trained_model.A, precision=4, separator=', ', suppress_small=True),
+                "B": np.array2string(trained_model.B, precision=4, separator=', ', suppress_small=True),
+                "pi": np.array2string(trained_model.pi, precision=4, separator=', ', suppress_small=True),
                 "likelihoods": likelihoods,
                 "final_likelihood": likelihoods[-1] if likelihoods else 0,
                 "iterations": len(likelihoods)
