@@ -11,8 +11,8 @@ import os
 
 app = Flask(__name__)
 
-def run_baum_welch_advanced(model, observations, max_iter=100, tol=1e-4):
-    """Run Baum-Welch with all tracking (uses updated baum_welch function)"""
+def run_baum_welch_advanced(model, observations, max_iter=100, tol=1e-3):  # Changed to 1e-3
+    """Run Baum-Welch with all tracking"""
     N = model.N
     M = model.M
     T = len(observations)
@@ -65,7 +65,7 @@ def run_baum_welch_advanced(model, observations, max_iter=100, tol=1e-4):
         
         # Convergence check using log-likelihood
         if iteration > 0 and delta < tol:
-            print(f"  ✓ Converged at iteration {iteration + 1} (Δ = {delta:.6f})")
+            print(f"  ✓ CONVERGED at iteration {iteration + 1} (Δ = {delta:.6f} < {tol})")
             break
         
         # Compute xi
@@ -97,13 +97,16 @@ def run_baum_welch_advanced(model, observations, max_iter=100, tol=1e-4):
         
         # Print progress every 5 iterations
         if (iteration + 1) % 5 == 0:
-            print(f"  Iteration {iteration + 1}: Log-Likelihood = {log_likelihood:.4f}")
+            print(f"  Iteration {iteration + 1}: Log-Likelihood = {log_likelihood:.4f}, Δ = {delta:.6f}")
     
-    converged = len(likelihoods) < max_iter
+    # Determine if converged (stopped early due to convergence)
+    iterations_completed = len(likelihoods)
+    converged = iterations_completed < max_iter
     
-    print(f"✓ Training completed in {len(likelihoods)} iterations")
+    print(f"\n✓ Training completed in {iterations_completed} iterations")
+    print(f"✓ Status: {'CONVERGED' if converged else 'MAX ITERATIONS REACHED'}")
     print(f"✓ Final Log-Likelihood: {log_likelihoods[-1]:.4f}")
-    print(f"✓ Final P(O|λ): {likelihoods[-1]:.6e}")
+    print(f"✓ Final Δ: {deltas[-1]:.6f}")
     
     return {
         'model': model,
@@ -114,7 +117,7 @@ def run_baum_welch_advanced(model, observations, max_iter=100, tol=1e-4):
         'gammas': gammas,
         'A_history': A_history,
         'deltas': deltas,
-        'iterations': len(likelihoods),
+        'iterations': iterations_completed,
         'converged': converged,
         'final_log_likelihood': log_likelihoods[-1],
         'final_likelihood': likelihoods[-1]
@@ -250,8 +253,8 @@ def index():
             # Create model
             model = HiddenMarkovModel(hidden_states, M)
             
-            # Train with advanced tracking (using updated convergence with tol=1e-4)
-            training_result = run_baum_welch_advanced(model, observations, max_iter, tol=1e-4)
+            # Train with advanced tracking (tol=1e-3 for faster convergence)
+            training_result = run_baum_welch_advanced(model, observations, max_iter, tol=1e-3)
             
             # Create intermediate table
             intermediate_table = []
