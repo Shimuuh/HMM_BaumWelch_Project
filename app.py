@@ -288,7 +288,7 @@ def index():
         except Exception as e:
             error = str(e)
     
-    return render_template("index_advanced.html", 
+    return render_template("index.html", 
                           result=result, 
                           plots=plots, 
                           graph_path=graph_path,
