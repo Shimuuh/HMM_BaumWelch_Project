@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>HMM Baum-Welch Trainer</title>
+</head>
+<body>
+    <h2>HMM Baum-Welch Visual Trainer</h2>
+
+    <form method="POST">
+        Hidden States: <input type="number" name="hidden_states" required><br><br>
+        Max Iterations: <input type="number" name="max_iter" required><br><br>
+        Observation Sequence (comma separated): <input type="text" name="observations" required><br><br>
+        <button type="submit">Train Model</button>
+    </form>
+
+    {% if result %}
+        <h3>Transition Matrix (A)</h3>
+        <pre>{{ result.A }}</pre>
+
+        <h3>Emission Matrix (B)</h3>
+        <pre>{{ result.B }}</pre>
+
+        <h3>Initial Distribution (π)</h3>
+        <pre>{{ result.pi }}</pre>
+
+        <h3>Likelihood Graph</h3>
+        <img src="{{ graph_path }}" width="400">
+    {% endif %}
+</body>
+</html>
