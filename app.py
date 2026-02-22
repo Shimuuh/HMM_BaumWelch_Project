@@ -2,9 +2,10 @@ from flask import Flask, render_template, request
 import numpy as np
 from src.hmm import HiddenMarkovModel
 from src.baum_welch import baum_welch
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend (fixes the threading warning)
 import matplotlib.pyplot as plt
 import os
-import json
 
 app = Flask(__name__)
 
@@ -38,7 +39,7 @@ def index():
                 "iterations": len(likelihoods)
             }
             
-            # Plot likelihood graph
+            # Plot likelihood graph (with Agg backend, no GUI thread issues)
             plt.figure(figsize=(10, 6))
             plt.plot(likelihoods, 'b-', linewidth=2, marker='o', markersize=4)
             plt.xlabel("Iteration", fontsize=12)
@@ -51,7 +52,7 @@ def index():
             graph_path = "static/graph.png"
             os.makedirs("static", exist_ok=True)
             plt.savefig(graph_path, dpi=100)
-            plt.close()
+            plt.close('all')  # Close all figures to free memory
             
         except Exception as e:
             error = str(e)

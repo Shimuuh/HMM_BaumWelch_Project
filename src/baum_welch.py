@@ -21,13 +21,16 @@ def baum_welch(model, observations, max_iter=100, tol=1e-6):
         
         # Convergence check
         if iteration > 0 and abs(likelihoods[-1] - likelihoods[-2]) < tol:
-            print(f"Converged at iteration {iteration + 1}")
+            # Remove or comment out this print
+            # print(f"Converged at iteration {iteration + 1}")
             break
         
         # Compute gamma (probability of being in state i at time t)
         gamma = np.zeros((T, N))
         for t in range(T):
-            gamma[t] = (alpha[t] * beta[t]) / np.sum(alpha[t] * beta[t])
+            denom = np.sum(alpha[t] * beta[t])
+            if denom > 0:
+                gamma[t] = (alpha[t] * beta[t]) / denom
         
         # Compute xi (probability of being in state i at time t and state j at time t+1)
         xi = np.zeros((T-1, N, N))
@@ -56,8 +59,8 @@ def baum_welch(model, observations, max_iter=100, tol=1e-6):
                     mask = (np.array(observations) == k)
                     model.B[i, k] = np.sum(gamma[mask, i]) / denom
         
-        # Print progress
-        if (iteration + 1) % 10 == 0:
-            print(f"Iteration {iteration + 1}: Likelihood = {likelihood:.6f}")
+        # Remove or comment out this progress print
+        # if (iteration + 1) % 10 == 0:
+        #     print(f"Iteration {iteration + 1}: Likelihood = {likelihood:.6f}")
     
     return model, likelihoods
