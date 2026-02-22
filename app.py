@@ -11,13 +11,13 @@ import os
 
 app = Flask(__name__)
 
-def run_baum_welch_advanced(model, observations, max_iter=100, tol=1e-6):
-    """Run Baum-Welch with all tracking (keeps original functionality + adds tracking)"""
+def run_baum_welch_advanced(model, observations, max_iter=100, tol=1e-4):
+    """Run Baum-Welch with all tracking (uses updated baum_welch function)"""
     N = model.N
     M = model.M
     T = len(observations)
     
-    # Storage for tracking (NEW)
+    # Storage for tracking
     likelihoods = []
     log_likelihoods = []
     alphas = []
@@ -26,46 +26,49 @@ def run_baum_welch_advanced(model, observations, max_iter=100, tol=1e-6):
     A_history = []
     deltas = []
     
+    print(f"\n🚀 Training HMM with {N} states, {M} symbols, {len(observations)} observations")
+    
     for iteration in range(max_iter):
-        # Forward & Backward (ORIGINAL)
+        # Forward & Backward
         alpha = model.forward(observations)
         beta = model.backward(observations)
         
-        # Compute gamma (NEW for tracking)
+        # Compute gamma
         gamma = np.zeros((T, N))
         for t in range(T):
             denom = np.sum(alpha[t] * beta[t])
             if denom > 0:
                 gamma[t] = (alpha[t] * beta[t]) / denom
         
-        # Store intermediate values for last iteration (NEW)
+        # Store intermediate values for last iteration
         if iteration == max_iter - 1 or iteration == len(range(max_iter)) - 1:
-            alphas = alpha[:15]  # First 15 time steps
+            alphas = alpha[:15]
             betas = beta[:15]
             gammas = gamma[:15]
         
-        # Compute likelihood (ORIGINAL)
+        # Compute likelihood
         likelihood = np.sum(alpha[-1])
-        log_likelihood = np.log(likelihood + 1e-300)  # NEW
+        log_likelihood = np.log(likelihood + 1e-300)
         
         likelihoods.append(likelihood)
         log_likelihoods.append(log_likelihood)
         
-        # Store A history (NEW)
+        # Store A history
         A_history.append(model.A.copy())
         
-        # Compute delta (NEW)
+        # Compute delta (change in log-likelihood)
         if iteration > 0:
             delta = abs(log_likelihood - log_likelihoods[-2])
         else:
             delta = 0
         deltas.append(delta)
         
-        # Convergence check (ORIGINAL)
-        if iteration > 0 and abs(likelihoods[-1] - likelihoods[-2]) < tol:
+        # Convergence check using log-likelihood
+        if iteration > 0 and delta < tol:
+            print(f"  ✓ Converged at iteration {iteration + 1} (Δ = {delta:.6f})")
             break
         
-        # Compute xi (ORIGINAL Baum-Welch)
+        # Compute xi
         xi = np.zeros((T-1, N, N))
         for t in range(T-1):
             denom = np.sum(alpha[t][:, None] * model.A * model.B[:, observations[t+1]] * beta[t+1])
@@ -74,26 +77,33 @@ def run_baum_welch_advanced(model, observations, max_iter=100, tol=1e-6):
                     numer = alpha[t, i] * model.A[i, :] * model.B[:, observations[t+1]] * beta[t+1]
                     xi[t, i, :] = numer / denom
         
-        # Update pi (ORIGINAL)
+        # Update pi
         model.pi = gamma[0]
         
-        # Update A (ORIGINAL)
+        # Update A
         for i in range(N):
             denom = np.sum(gamma[:-1, i])
             if denom > 0:
                 for j in range(N):
                     model.A[i, j] = np.sum(xi[:, i, j]) / denom
         
-        # Update B (ORIGINAL)
+        # Update B
         for i in range(N):
             denom = np.sum(gamma[:, i])
             if denom > 0:
                 for k in range(M):
                     mask = (np.array(observations) == k)
                     model.B[i, k] = np.sum(gamma[mask, i]) / denom
+        
+        # Print progress every 5 iterations
+        if (iteration + 1) % 5 == 0:
+            print(f"  Iteration {iteration + 1}: Log-Likelihood = {log_likelihood:.4f}")
     
-    # Determine if converged (NEW)
     converged = len(likelihoods) < max_iter
+    
+    print(f"✓ Training completed in {len(likelihoods)} iterations")
+    print(f"✓ Final Log-Likelihood: {log_likelihoods[-1]:.4f}")
+    print(f"✓ Final P(O|λ): {likelihoods[-1]:.6e}")
     
     return {
         'model': model,
@@ -111,10 +121,10 @@ def run_baum_welch_advanced(model, observations, max_iter=100, tol=1e-6):
     }
 
 def create_plots(result, hidden_states, observations):
-    """Create all plots (ORIGINAL graph + NEW plots)"""
+    """Create all plots"""
     plots = {}
     
-    # ORIGINAL Likelihood Graph (save to static/graph.png)
+    # Original Likelihood Graph
     plt.figure(figsize=(10, 6))
     plt.plot(result['likelihoods'], 'b-', linewidth=2, marker='o', markersize=4)
     plt.xlabel("Iteration", fontsize=12)
@@ -123,14 +133,13 @@ def create_plots(result, hidden_states, observations):
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     
-    # Save ORIGINAL graph to static folder
     os.makedirs("static", exist_ok=True)
     plt.savefig("static/graph.png", dpi=100)
     plt.close()
     
-    # NEW: Log-Likelihood Convergence (for display in page)
+    # Log-Likelihood Convergence
     plt.figure(figsize=(8, 4))
-    plt.plot(result['log_likelihoods'], 'r-', linewidth=2)
+    plt.plot(result['log_likelihoods'], 'r-', linewidth=2, marker='s', markersize=3)
     plt.xlabel("Iteration")
     plt.ylabel("Log P(O|λ)")
     plt.title("Log-Likelihood Convergence")
@@ -143,7 +152,7 @@ def create_plots(result, hidden_states, observations):
     plots['log_likelihood'] = base64.b64encode(img.getvalue()).decode()
     plt.close()
     
-    # NEW: Parameter Evolution (if we have history)
+    # Parameter Evolution
     if len(result['A_history']) > 1:
         plt.figure(figsize=(8, 4))
         A_history = np.array(result['A_history'])
@@ -163,17 +172,16 @@ def create_plots(result, hidden_states, observations):
         plots['param_evolution'] = base64.b64encode(img.getvalue()).decode()
         plt.close()
     
-    # NEW: FSM Diagram
+    # FSM Diagram
     create_fsm_diagram(result['model'])
     
     return plots
 
 def create_fsm_diagram(model):
-    """Create a simple FSM diagram"""
+    """Create FSM diagram"""
     plt.figure(figsize=(6, 4))
     
     N = model.N
-    # Create a circular layout
     angles = np.linspace(0, 2*np.pi, N, endpoint=False)
     radius = 0.3
     centers = [(0.5 + radius * np.cos(a), 0.5 + radius * np.sin(a)) for a in angles]
@@ -192,14 +200,12 @@ def create_fsm_diagram(model):
                 x2, y2 = centers[j]
                 
                 if i == j:
-                    # Self-loop
                     circle = plt.Circle((x1, y1 + 0.15), 0.08, fill=False, 
                                       ec='gray', linestyle='-', linewidth=1)
                     plt.gca().add_patch(circle)
                     plt.text(x1 + 0.12, y1 + 0.2, f'{model.A[i, j]:.2f}', 
                            fontsize=8, ha='center')
                 else:
-                    # Arrow
                     dx = x2 - x1
                     dy = y2 - y1
                     plt.arrow(x1 + 0.05*dx, y1 + 0.05*dy, 0.8*dx, 0.8*dy, 
@@ -214,7 +220,6 @@ def create_fsm_diagram(model):
     plt.axis('off')
     plt.title("State Transition Diagram")
     
-    # Save diagram
     os.makedirs("static", exist_ok=True)
     plt.savefig("static/diagram.png", dpi=100, bbox_inches='tight')
     plt.close()
@@ -229,26 +234,26 @@ def index():
 
     if request.method == "POST":
         try:
-            # Get form data (ORIGINAL fields)
+            # Get form data
             hidden_states = int(request.form["hidden_states"])
             max_iter = int(request.form["max_iter"])
             
-            # Parse observations (ORIGINAL)
+            # Parse observations
             observations = list(map(int, request.form["observations"].split(",")))
             
-            # NEW: Optional symbols field
+            # Optional symbols field
             if request.form.get("symbols") and request.form["symbols"].strip():
                 M = int(request.form["symbols"])
             else:
-                M = len(set(observations))  # Auto-detect (ORIGINAL behavior)
+                M = len(set(observations))  # Auto-detect
             
-            # Create model (ORIGINAL)
+            # Create model
             model = HiddenMarkovModel(hidden_states, M)
             
-            # Train with advanced tracking
-            training_result = run_baum_welch_advanced(model, observations, max_iter)
+            # Train with advanced tracking (using updated convergence with tol=1e-4)
+            training_result = run_baum_welch_advanced(model, observations, max_iter, tol=1e-4)
             
-            # Create intermediate table for display (NEW)
+            # Create intermediate table
             intermediate_table = []
             if len(training_result['alphas']) > 0:
                 for t in range(min(10, len(training_result['alphas']))):
@@ -263,17 +268,14 @@ def index():
             # Create plots
             plots = create_plots(training_result, hidden_states, observations)
             
-            # Prepare results (ORIGINAL + NEW)
+            # Prepare results
             result = {
-                # ORIGINAL fields (with suppress_small=True)
                 "A": np.array2string(training_result['model'].A, precision=4, separator=', ', suppress_small=True),
                 "B": np.array2string(training_result['model'].B, precision=4, separator=', ', suppress_small=True),
                 "pi": np.array2string(training_result['model'].pi, precision=4, separator=', ', suppress_small=True),
                 "likelihoods": training_result['likelihoods'],
                 "final_likelihood": training_result['final_likelihood'],
                 "iterations": training_result['iterations'],
-                
-                # NEW fields
                 "final_log_likelihood": training_result['final_log_likelihood'],
                 "converged": training_result['converged'],
                 "delta": training_result['deltas'][-1] if training_result['deltas'] else 0,
@@ -281,12 +283,12 @@ def index():
                 "log_likelihoods": training_result['log_likelihoods']
             }
             
-            # Set paths
             graph_path = "static/graph.png"
             diagram_path = "static/diagram.png"
             
         except Exception as e:
             error = str(e)
+            print(f"Error: {e}")
     
     return render_template("index.html", 
                           result=result, 
@@ -294,7 +296,7 @@ def index():
                           graph_path=graph_path,
                           diagram_path=diagram_path,
                           error=error,
-                          request=request)  # Pass request for form field retention
+                          request=request)
 
 if __name__ == "__main__":
     app.run(debug=True)
