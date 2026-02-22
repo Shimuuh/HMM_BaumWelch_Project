@@ -2,29 +2,141 @@
 <html>
 <head>
     <title>HMM Baum-Welch Trainer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h2 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        label {
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="text"], input[type="number"] {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .result {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+        }
+        .matrix {
+            background-color: white;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+            overflow-x: auto;
+        }
+        pre {
+            margin: 0;
+            font-family: 'Courier New', monospace;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        .error {
+            color: red;
+            padding: 10px;
+            background-color: #ffebee;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        .info {
+            color: #666;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+    </style>
 </head>
 <body>
-    <h2>HMM Baum-Welch Visual Trainer</h2>
-
-    <form method="POST">
-        Hidden States: <input type="number" name="hidden_states" required><br><br>
-        Max Iterations: <input type="number" name="max_iter" required><br><br>
-        Observation Sequence (comma separated): <input type="text" name="observations" required><br><br>
-        <button type="submit">Train Model</button>
-    </form>
-
-    {% if result %}
-        <h3>Transition Matrix (A)</h3>
-        <pre>{{ result.A }}</pre>
-
-        <h3>Emission Matrix (B)</h3>
-        <pre>{{ result.B }}</pre>
-
-        <h3>Initial Distribution (π)</h3>
-        <pre>{{ result.pi }}</pre>
-
-        <h3>Likelihood Graph</h3>
-        <img src="{{ graph_path }}" width="400">
-    {% endif %}
+    <div class="container">
+        <h2>HMM Baum-Welch Visual Trainer</h2>
+        
+        <form method="POST">
+            <label>Hidden States (N):</label>
+            <input type="number" name="hidden_states" min="1" max="10" value="2" required>
+            
+            <label>Max Iterations:</label>
+            <input type="number" name="max_iter" min="1" max="1000" value="100" required>
+            
+            <label>Observation Sequence (comma-separated integers):</label>
+            <input type="text" name="observations" placeholder="e.g., 0,1,2,0,0,1,2" value="0,1,2,0,0,1,2" required>
+            <div class="info">Use 0-based indices for observations</div>
+            
+            <button type="submit">Train Model</button>
+        </form>
+        
+        {% if error %}
+        <div class="error">
+            <strong>Error:</strong> {{ error }}
+        </div>
+        {% endif %}
+        
+        {% if result %}
+        <div class="result">
+            <h3>Training Results</h3>
+            <p><strong>Iterations completed:</strong> {{ result.iterations }}</p>
+            <p><strong>Final Log-Likelihood:</strong> {{ "%.6f"|format(result.final_likelihood) }}</p>
+            
+            <h4>Transition Matrix (A):</h4>
+            <div class="matrix">
+                <pre>{{ result.A }}</pre>
+            </div>
+            
+            <h4>Emission Matrix (B):</h4>
+            <div class="matrix">
+                <pre>{{ result.B }}</pre>
+            </div>
+            
+            <h4>Initial Distribution (π):</h4>
+            <div class="matrix">
+                <pre>{{ result.pi }}</pre>
+            </div>
+            
+            <h4>Likelihood over Iterations:</h4>
+            {% if graph_path %}
+            <img src="{{ graph_path }}" alt="Likelihood Graph">
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
 </body>
 </html>
