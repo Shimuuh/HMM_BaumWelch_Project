@@ -3,61 +3,298 @@ import numpy as np
 from src.hmm import HiddenMarkovModel
 from src.baum_welch import baum_welch
 import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend (fixes the threading warning)
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import io
+import base64
 import os
 
 app = Flask(__name__)
 
+def run_baum_welch_advanced(model, observations, max_iter=100, tol=1e-6):
+    """Run Baum-Welch with all tracking (keeps original functionality + adds tracking)"""
+    N = model.N
+    M = model.M
+    T = len(observations)
+    
+    # Storage for tracking (NEW)
+    likelihoods = []
+    log_likelihoods = []
+    alphas = []
+    betas = []
+    gammas = []
+    A_history = []
+    deltas = []
+    
+    for iteration in range(max_iter):
+        # Forward & Backward (ORIGINAL)
+        alpha = model.forward(observations)
+        beta = model.backward(observations)
+        
+        # Compute gamma (NEW for tracking)
+        gamma = np.zeros((T, N))
+        for t in range(T):
+            denom = np.sum(alpha[t] * beta[t])
+            if denom > 0:
+                gamma[t] = (alpha[t] * beta[t]) / denom
+        
+        # Store intermediate values for last iteration (NEW)
+        if iteration == max_iter - 1 or iteration == len(range(max_iter)) - 1:
+            alphas = alpha[:15]  # First 15 time steps
+            betas = beta[:15]
+            gammas = gamma[:15]
+        
+        # Compute likelihood (ORIGINAL)
+        likelihood = np.sum(alpha[-1])
+        log_likelihood = np.log(likelihood + 1e-300)  # NEW
+        
+        likelihoods.append(likelihood)
+        log_likelihoods.append(log_likelihood)
+        
+        # Store A history (NEW)
+        A_history.append(model.A.copy())
+        
+        # Compute delta (NEW)
+        if iteration > 0:
+            delta = abs(log_likelihood - log_likelihoods[-2])
+        else:
+            delta = 0
+        deltas.append(delta)
+        
+        # Convergence check (ORIGINAL)
+        if iteration > 0 and abs(likelihoods[-1] - likelihoods[-2]) < tol:
+            break
+        
+        # Compute xi (ORIGINAL Baum-Welch)
+        xi = np.zeros((T-1, N, N))
+        for t in range(T-1):
+            denom = np.sum(alpha[t][:, None] * model.A * model.B[:, observations[t+1]] * beta[t+1])
+            if denom > 0:
+                for i in range(N):
+                    numer = alpha[t, i] * model.A[i, :] * model.B[:, observations[t+1]] * beta[t+1]
+                    xi[t, i, :] = numer / denom
+        
+        # Update pi (ORIGINAL)
+        model.pi = gamma[0]
+        
+        # Update A (ORIGINAL)
+        for i in range(N):
+            denom = np.sum(gamma[:-1, i])
+            if denom > 0:
+                for j in range(N):
+                    model.A[i, j] = np.sum(xi[:, i, j]) / denom
+        
+        # Update B (ORIGINAL)
+        for i in range(N):
+            denom = np.sum(gamma[:, i])
+            if denom > 0:
+                for k in range(M):
+                    mask = (np.array(observations) == k)
+                    model.B[i, k] = np.sum(gamma[mask, i]) / denom
+    
+    # Determine if converged (NEW)
+    converged = len(likelihoods) < max_iter
+    
+    return {
+        'model': model,
+        'likelihoods': likelihoods,
+        'log_likelihoods': log_likelihoods,
+        'alphas': alphas,
+        'betas': betas,
+        'gammas': gammas,
+        'A_history': A_history,
+        'deltas': deltas,
+        'iterations': len(likelihoods),
+        'converged': converged,
+        'final_log_likelihood': log_likelihoods[-1],
+        'final_likelihood': likelihoods[-1]
+    }
+
+def create_plots(result, hidden_states, observations):
+    """Create all plots (ORIGINAL graph + NEW plots)"""
+    plots = {}
+    
+    # ORIGINAL Likelihood Graph (save to static/graph.png)
+    plt.figure(figsize=(10, 6))
+    plt.plot(result['likelihoods'], 'b-', linewidth=2, marker='o', markersize=4)
+    plt.xlabel("Iteration", fontsize=12)
+    plt.ylabel("P(O | λ)", fontsize=12)
+    plt.title("Baum-Welch Convergence", fontsize=14)
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    
+    # Save ORIGINAL graph to static folder
+    os.makedirs("static", exist_ok=True)
+    plt.savefig("static/graph.png", dpi=100)
+    plt.close()
+    
+    # NEW: Log-Likelihood Convergence (for display in page)
+    plt.figure(figsize=(8, 4))
+    plt.plot(result['log_likelihoods'], 'r-', linewidth=2)
+    plt.xlabel("Iteration")
+    plt.ylabel("Log P(O|λ)")
+    plt.title("Log-Likelihood Convergence")
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    
+    img = io.BytesIO()
+    plt.savefig(img, format='png', dpi=100)
+    img.seek(0)
+    plots['log_likelihood'] = base64.b64encode(img.getvalue()).decode()
+    plt.close()
+    
+    # NEW: Parameter Evolution (if we have history)
+    if len(result['A_history']) > 1:
+        plt.figure(figsize=(8, 4))
+        A_history = np.array(result['A_history'])
+        for i in range(hidden_states):
+            for j in range(hidden_states):
+                plt.plot(A_history[:, i, j], label=f'A[{i}][{j}]', linewidth=2)
+        plt.xlabel("Iteration")
+        plt.ylabel("Probability")
+        plt.title("Transition Matrix Evolution")
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        
+        img = io.BytesIO()
+        plt.savefig(img, format='png', dpi=100)
+        img.seek(0)
+        plots['param_evolution'] = base64.b64encode(img.getvalue()).decode()
+        plt.close()
+    
+    # NEW: FSM Diagram
+    create_fsm_diagram(result['model'])
+    
+    return plots
+
+def create_fsm_diagram(model):
+    """Create a simple FSM diagram"""
+    plt.figure(figsize=(6, 4))
+    
+    N = model.N
+    # Create a circular layout
+    angles = np.linspace(0, 2*np.pi, N, endpoint=False)
+    radius = 0.3
+    centers = [(0.5 + radius * np.cos(a), 0.5 + radius * np.sin(a)) for a in angles]
+    
+    # Draw states
+    for i, (x, y) in enumerate(centers):
+        circle = plt.Circle((x, y), 0.1, fill=True, color='lightblue', ec='black', linewidth=2)
+        plt.gca().add_patch(circle)
+        plt.text(x, y, f'S{i}', ha='center', va='center', fontweight='bold')
+    
+    # Draw transitions
+    for i in range(N):
+        for j in range(N):
+            if model.A[i, j] > 0.01:
+                x1, y1 = centers[i]
+                x2, y2 = centers[j]
+                
+                if i == j:
+                    # Self-loop
+                    circle = plt.Circle((x1, y1 + 0.15), 0.08, fill=False, 
+                                      ec='gray', linestyle='-', linewidth=1)
+                    plt.gca().add_patch(circle)
+                    plt.text(x1 + 0.12, y1 + 0.2, f'{model.A[i, j]:.2f}', 
+                           fontsize=8, ha='center')
+                else:
+                    # Arrow
+                    dx = x2 - x1
+                    dy = y2 - y1
+                    plt.arrow(x1 + 0.05*dx, y1 + 0.05*dy, 0.8*dx, 0.8*dy, 
+                            head_width=0.03, head_length=0.03, fc='gray', ec='gray',
+                            length_includes_head=True, alpha=0.5)
+                    plt.text(x1 + 0.5*dx, y1 + 0.5*dy, f'{model.A[i, j]:.2f}', 
+                           fontsize=8, ha='center', va='center',
+                           bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.7))
+    
+    plt.xlim(0, 1)
+    plt.ylim(0, 1)
+    plt.axis('off')
+    plt.title("State Transition Diagram")
+    
+    # Save diagram
+    os.makedirs("static", exist_ok=True)
+    plt.savefig("static/diagram.png", dpi=100, bbox_inches='tight')
+    plt.close()
+
 @app.route("/", methods=["GET", "POST"])
 def index():
     result = None
-    graph_path = None
+    plots = None
     error = None
+    graph_path = None
+    diagram_path = None
 
     if request.method == "POST":
         try:
+            # Get form data (ORIGINAL fields)
             hidden_states = int(request.form["hidden_states"])
             max_iter = int(request.form["max_iter"])
-            # Parse observations and determine M (number of unique observation symbols)
-            observations = list(map(int, request.form["observations"].split(",")))
-            M = len(set(observations))  # Number of unique observation symbols
             
-            # Create model with N and M
+            # Parse observations (ORIGINAL)
+            observations = list(map(int, request.form["observations"].split(",")))
+            
+            # NEW: Optional symbols field
+            if request.form.get("symbols") and request.form["symbols"].strip():
+                M = int(request.form["symbols"])
+            else:
+                M = len(set(observations))  # Auto-detect (ORIGINAL behavior)
+            
+            # Create model (ORIGINAL)
             model = HiddenMarkovModel(hidden_states, M)
             
-            # Train using Baum-Welch
-            trained_model, likelihoods = baum_welch(model, observations, max_iter=max_iter)
+            # Train with advanced tracking
+            training_result = run_baum_welch_advanced(model, observations, max_iter)
             
-            # Prepare results for display with suppress_small=True to hide scientific notation
+            # Create intermediate table for display (NEW)
+            intermediate_table = []
+            if len(training_result['alphas']) > 0:
+                for t in range(min(10, len(training_result['alphas']))):
+                    row = {
+                        't': t,
+                        'alpha': [f"{x:.4f}" for x in training_result['alphas'][t]],
+                        'beta': [f"{x:.4f}" for x in training_result['betas'][t]],
+                        'gamma': [f"{x:.4f}" for x in training_result['gammas'][t]]
+                    }
+                    intermediate_table.append(row)
+            
+            # Create plots
+            plots = create_plots(training_result, hidden_states, observations)
+            
+            # Prepare results (ORIGINAL + NEW)
             result = {
-                "A": np.array2string(trained_model.A, precision=4, separator=', ', suppress_small=True),
-                "B": np.array2string(trained_model.B, precision=4, separator=', ', suppress_small=True),
-                "pi": np.array2string(trained_model.pi, precision=4, separator=', ', suppress_small=True),
-                "likelihoods": likelihoods,
-                "final_likelihood": likelihoods[-1] if likelihoods else 0,
-                "iterations": len(likelihoods)
+                # ORIGINAL fields (with suppress_small=True)
+                "A": np.array2string(training_result['model'].A, precision=4, separator=', ', suppress_small=True),
+                "B": np.array2string(training_result['model'].B, precision=4, separator=', ', suppress_small=True),
+                "pi": np.array2string(training_result['model'].pi, precision=4, separator=', ', suppress_small=True),
+                "likelihoods": training_result['likelihoods'],
+                "final_likelihood": training_result['final_likelihood'],
+                "iterations": training_result['iterations'],
+                
+                # NEW fields
+                "final_log_likelihood": training_result['final_log_likelihood'],
+                "converged": training_result['converged'],
+                "delta": training_result['deltas'][-1] if training_result['deltas'] else 0,
+                "intermediate_table": intermediate_table,
+                "log_likelihoods": training_result['log_likelihoods']
             }
             
-            # Plot likelihood graph (with Agg backend, no GUI thread issues)
-            plt.figure(figsize=(10, 6))
-            plt.plot(likelihoods, 'b-', linewidth=2, marker='o', markersize=4)
-            plt.xlabel("Iteration", fontsize=12)
-            plt.ylabel("P(O | λ)", fontsize=12)
-            plt.title("Baum-Welch Convergence", fontsize=14)
-            plt.grid(True, alpha=0.3)
-            plt.tight_layout()
-            
-            # Save graph
+            # Set paths
             graph_path = "static/graph.png"
-            os.makedirs("static", exist_ok=True)
-            plt.savefig(graph_path, dpi=100)
-            plt.close('all')  # Close all figures to free memory
+            diagram_path = "static/diagram.png"
             
         except Exception as e:
             error = str(e)
     
-    return render_template("index.html", result=result, graph_path=graph_path, error=error)
+    return render_template("index_advanced.html", 
+                          result=result, 
+                          plots=plots, 
+                          graph_path=graph_path,
+                          diagram_path=diagram_path,
+                          error=error,
+                          request=request)  # Pass request for form field retention
 
 if __name__ == "__main__":
     app.run(debug=True)
